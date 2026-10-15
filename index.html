@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tidal Force & Lunar Phase Calculator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-4">
+<div class="max-w-3xl mx-auto">
+  <h1 class="text-2xl font-bold text-center mb-2 text-blue-400">Tidal Force & Lunar Phase Calculator</h1>
+  <p class="text-center text-gray-400 text-sm mb-6">Explore how the Moon's phase affects tides</p>
+
+  <div class="mb-6">
+    <label for="moonAge" class="block text-sm font-medium text-gray-300 mb-2">
+      Moon Age: <span id="moonAgeVal" class="text-blue-300 font-bold">0.0</span> days
+      <span id="phaseLabel" class="ml-2 text-yellow-300"></span>
+    </label>
+    <input type="range" id="moonAge" min="0" max="29.5" step="0.1" value="0" class="w-full accent-blue-500" aria-label="Moon age in days">
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <div class="bg-gray-800 rounded p-4 flex flex-col items-center">
+      <h2 class="text-sm font-semibold text-yellow-400 mb-3">Moon Phase</h2>
+      <canvas id="moonCanvas" width="160" height="160" aria-label="Moon phase visualization"></canvas>
+      <div id="moonName" class="mt-2 text-sm text-gray-300 text-center"></div>
+    </div>
+    <div class="bg-gray-800 rounded p-4">
+      <h2 class="text-sm font-semibold text-yellow-400 mb-3">Tidal Data</h2>
+      <div class="space-y-3 text-sm">
+        <div>
+          <div class="text-xs text-gray-400 mb-1">Tidal Force (relative)</div>
+          <div class="flex items-center gap-2">
+            <div class="flex-1 bg-gray-700 rounded-full h-3">
+              <div id="tidalBar" class="h-3 rounded-full bg-blue-500 transition-all"></div>
+            </div>
+            <span id="tidalForce" class="text-blue-300 font-bold w-12 text-right"></span>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-gray-700 rounded p-2">
+            <div class="text-xs text-gray-400">High Tide</div>
+            <div id="highTide" class="text-blue-300 font-bold"></div>
+          </div>
+          <div class="bg-gray-700 rounded p-2">
+            <div class="text-xs text-gray-400">Low Tide</div>
+            <div id="lowTide" class="text-blue-300 font-bold"></div>
+          </div>
+          <div class="bg-gray-700 rounded p-2">
+            <div class="text-xs text-gray-400">Tidal Range</div>
+            <div id="tidalRange" class="text-yellow-300 font-bold"></div>
+          </div>
+          <div class="bg-gray-700 rounded p-2">
+            <div class="text-xs text-gray-400">Type</div>
+            <div id="tidalType" class="text-green-300 font-bold text-xs"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <canvas id="chart" height="160" aria-label="Tidal force over lunar cycle"></canvas>
+
+  <div class="bg-gray-800 rounded p-3 mt-4 text-xs text-gray-400">
+    <strong class="text-purple-400">Key Facts:</strong>
+    Spring tides (new/full moon) — Moon and Sun align, strongest tides.
+    Neap tides (quarter moons) — Moon and Sun at 90°, weakest tides.
+    Tidal force ∝ 1/r³ (cubic inverse).
+  </div>
+</div>
+
+<script>
+let chart = null;
+
+const phases = [
+  { name: 'New Moon', icon: '🌑', age: [0, 1.85] },
+  { name: 'Waxing Crescent', icon: '🌒', age: [1.85, 7.38] },
+  { name: 'First Quarter', icon: '🌓', age: [7.38, 9.22] },
+  { name: 'Waxing Gibbous', icon: '🌔', age: [9.22, 14.75] },
+  { name: 'Full Moon', icon: '🌕', age: [14.75, 16.61] },
+  { name: 'Waning Gibbous', icon: '🌖', age: [16.61, 22.15] },
+  { name: 'Last Quarter', icon: '🌗', age: [22.15, 24.0] },
+  { name: 'Waning Crescent', icon: '🌘', age: [24.0, 29.5] },
+];
+
+function getPhase(age) {
+  return phases.find(p => age >= p.age[0] && age < p.age[1]) || phases[0];
+}
+
+function tidalForce(age) {
+  // Spring at new/full, neap at quarters
+  const angle = age / 29.5 * 2 * Math.PI;
+  const spring = Math.cos(2 * angle); // Max at 0 and π (new/full)
+  return 0.5 + 0.5 * spring; // 0–1
+}
+
+function drawMoon(age) {
+  const canvas = document.getElementById('moonCanvas');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const r = 60, cx = W/2, cy = H/2;
+  const illumination = age / 29.5;
+
+  // Dark circle
+  ctx.fillStyle = '#1f2937';
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+
+  // Illuminated part
+  ctx.save();
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.clip();
+  ctx.fillStyle = '#fef3c7';
+  const phase = illumination;
+  if (phase <= 0.5) {
+    // Waxing
+    const x = r - 4*r*(phase);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, Math.PI/2, -Math.PI/2);
+    ctx.bezierCurveTo(cx + x, cy - r, cx + x, cy + r, cx, cy + r);
+    ctx.fill();
+  } else {
+    // Waning
+    const x = r - 4*r*(1-phase);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, -Math.PI/2, Math.PI/2);
+    ctx.bezierCurveTo(cx - x, cy + r, cx - x, cy - r, cx, cy - r);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Outline
+  ctx.strokeStyle = '#374151';
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
+}
+
+function update() {
+  const age = parseFloat(document.getElementById('moonAge').value);
+  document.getElementById('moonAgeVal').textContent = age.toFixed(1);
+
+  const phase = getPhase(age);
+  document.getElementById('phaseLabel').textContent = phase.icon + ' ' + phase.name;
+  document.getElementById('moonName').textContent = phase.icon + ' ' + phase.name;
+
+  drawMoon(age);
+
+  const tf = tidalForce(age);
+  const isSpring = tf > 0.75;
+  const isNeap = tf < 0.25;
+  const highTideH = 2.5 + tf * 2.5;
+  const lowTideH = -1.5 - tf * 1.5;
+
+  document.getElementById('tidalBar').style.width = (tf * 100) + '%';
+  document.getElementById('tidalForce').textContent = tf.toFixed(2);
+  document.getElementById('highTide').textContent = '+' + highTideH.toFixed(1) + 'm';
+  document.getElementById('lowTide').textContent = lowTideH.toFixed(1) + 'm';
+  document.getElementById('tidalRange').textContent = (highTideH - lowTideH).toFixed(1) + 'm';
+  document.getElementById('tidalType').textContent = isSpring ? 'Spring Tide' : isNeap ? 'Neap Tide' : 'Intermediate';
+
+  updateChart(age);
+}
+
+function updateChart(currentAge) {
+  const ages = Array.from({length: 296}, (_, i) => i * 0.1);
+  const forces = ages.map(a => tidalForce(a));
+
+  const ctx2 = document.getElementById('chart').getContext('2d');
+  if (chart) chart.destroy();
+  chart = new Chart(ctx2, {
+    type: 'line',
+    data: {
+      labels: ages.map(a => a.toFixed(0)),
+      datasets: [
+        { label: 'Tidal Force', data: forces, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', borderWidth: 2, pointRadius: 0, fill: true },
+        { label: 'Current', data: ages.map(a => Math.abs(a - currentAge) < 0.2 ? tidalForce(a) : null), borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 0, pointRadius: ages.map(a => Math.abs(a - currentAge) < 0.2 ? 6 : 0), showLine: false }
+      ]
+    },
+    options: {
+      responsive: true,
+      animation: false,
+      plugins: { legend: { labels: { color: '#9ca3af' } } },
+      scales: {
+        y: { min: 0, max: 1, ticks: { color: '#9ca3af' }, grid: { color: '#374151' }, title: { display: true, text: 'Relative Force', color: '#9ca3af' } },
+        x: { ticks: { color: '#9ca3af', maxTicksLimit: 10, callback: (v, i) => i % 30 === 0 ? ages[i].toFixed(0) + 'd' : '' }, grid: { color: '#1f2937' } }
+      }
+    }
+  });
+}
+
+document.getElementById('moonAge').addEventListener('input', update);
+update();
+</script>
+</body>
+</html>
